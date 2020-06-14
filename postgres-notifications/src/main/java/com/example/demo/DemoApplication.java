@@ -25,6 +25,8 @@ import io.r2dbc.postgresql.api.PostgresqlConnection;
 import io.r2dbc.postgresql.api.PostgresqlResult;
 import io.r2dbc.spi.ConnectionFactory;
 import io.r2dbc.spi.Wrapped;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -40,10 +42,6 @@ import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
 import org.springframework.data.repository.reactive.ReactiveCrudRepository;
 import org.springframework.http.MediaType;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RestController;
 
 @SpringBootApplication
 @EnableR2dbcRepositories(considerNestedRepositories = true)
@@ -65,68 +63,67 @@ public class DemoApplication {
 
 		return initializer;
 	}
+}
 
-	@RestController
-	class LoginController {
+@RestController
+class LoginController {
 
-		final LoginEventRepository repository;
-		final PostgresqlConnection connection;
+	final LoginEventRepository repository;
+	final PostgresqlConnection connection;
 
-		LoginController(LoginEventRepository repository, ConnectionFactory connectionFactory) {
+	public LoginController(LoginEventRepository repository, ConnectionFactory connectionFactory) {
 
-			this.repository = repository;
-			this.connection = Mono.from(connectionFactory.create())
-					.map(it -> (PostgresqlConnection) ((Wrapped) it).unwrap()).block();
-		}
-
-		@PostConstruct
-		private void postConstruct() {
-			this.connection.createStatement("LISTEN login_event_notification")
-					.execute()
-					.flatMap(PostgresqlResult::getRowsUpdated)
-					.subscribe();
-		}
-
-		@PreDestroy
-		private void preDestroy() {
-			this.connection.close().subscribe();
-		}
-
-		@PostMapping("/login/{username}")
-		Mono<Void> login(@PathVariable String username) {
-			return this.repository
-					.save(new LoginEvent(username, LocalDateTime.now()))
-					.then();
-		}
-
-		@GetMapping(value = "/login-stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-		Flux<CharSequence> getStream() {
-			return this.connection
-					.getNotifications()
-					.map(Notification::getParameter);
-		}
+		this.repository = repository;
+		this.connection = Mono.from(connectionFactory.create())
+				.map(it -> (PostgresqlConnection) ((Wrapped) it).unwrap()).block();
 	}
 
-	interface LoginEventRepository extends ReactiveCrudRepository<LoginEvent, Integer> {
-
+	@PostConstruct
+	private void postConstruct() {
+		this.connection.createStatement("LISTEN login_event_notification")
+				.execute()
+				.flatMap(PostgresqlResult::getRowsUpdated)
+				.subscribe();
 	}
 
-	@Table
-	class LoginEvent {
+	@PreDestroy
+	private void preDestroy() {
+		this.connection.close().subscribe();
+	}
 
-		@Id
-		Integer id;
+	@PostMapping("/login/{username}")
+	Mono<Void> login(@PathVariable String username) {
+		return this.repository
+				.save(new LoginEvent(username, LocalDateTime.now()))
+				.then();
+	}
 
-		@Column("user_name")
-		String username;
+	@GetMapping(value = "/login-stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+	Flux<CharSequence> getStream() {
+		return this.connection
+				.getNotifications()
+				.map(Notification::getParameter);
+	}
+}
 
-		LocalDateTime loginTime;
+interface LoginEventRepository extends ReactiveCrudRepository<LoginEvent, Integer> {
 
-		public LoginEvent(String username, LocalDateTime loginTime) {
-			this.username = username;
-			this.loginTime = loginTime;
-		}
+}
 
+@Table
+class LoginEvent {
+
+	@Id
+	Integer id;
+
+	@Column("user_name")
+	String username;
+
+	LocalDateTime loginTime;
+
+	public LoginEvent(String username, LocalDateTime loginTime) {
+		this.username = username;
+		this.loginTime = loginTime;
 	}
 
 }
